@@ -1,4 +1,4 @@
-# Suivi des heures – Chantier “Oléron”
+# Suivi des heures – Chantier
 
 Application web statique pour saisir, suivre et imprimer les heures par chantier, ouvrier et poste. Aucune base de données ni serveur requis: les données sont stockées dans le navigateur (localStorage) et peuvent être exportées/importées en JSON ou partagées via une URL.
 
