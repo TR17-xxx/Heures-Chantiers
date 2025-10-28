@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Chantier Oléron - Suivi des heures</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{
+      --bg:#0f172a; --card:#111827; --muted:#1f2937; --text:#e5e7eb; --sub:#9ca3af; --acc:#22c55e; --warn:#f59e0b; --danger:#ef4444; --line:#334155;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Arial}
+    header{padding:20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+    header h1{margin:0;font-size:18px}
+    header .tag{background:var(--muted);padding:4px 10px;border-radius:999px;color:var(--sub)}
+    main{padding:20px;display:grid;grid-template-columns:1fr;gap:16px;max-width:1200px;margin:0 auto}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+    .grid{display:grid;gap:12px}
+    .grid.cols-2{grid-template-columns:1fr 1fr}
+    .grid.cols-3{grid-template-columns:repeat(3,1fr)}
+    label{display:flex;flex-direction:column;gap:6px;color:var(--sub);font-size:12px}
+    input,select,textarea{background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px}
+    textarea{resize:vertical;min-height:38px}
+    button{background:var(--acc);border:none;color:#052e16;padding:10px 12px;border-radius:8px;font-weight:600;cursor:pointer}
+    button.secondary{background:var(--muted);color:var(--text)}
+    button.warn{background:var(--warn);color:#1f1300}
+    button.danger{background:var(--danger);color:#190000}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+    table{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+    th{background:#0b1220;color:var(--sub);font-weight:600}
+    tfoot td{font-weight:700;background:#0b1220}
+    .right{text-align:right}
+    .muted{color:var(--sub)}
+    .pill{background:#0b1220;color:var(--sub);padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+    #totalAllPill{background:var(--acc);color:#052e16;border-color:transparent;font-weight:800}
+    /* Worker-based shading */
+    tr.worker-even{background:#0b1220}
+    tr.worker-odd{background:#0a0f1d}
+    @media (max-width: 900px){ .grid.cols-3{grid-template-columns:1fr} .grid.cols-2{grid-template-columns:1fr} }
+
+    /* Print styles */
+    @media print{
+      body{background:#fff;color:#111}
+      header{border:none}
+      .card{border:none}
+      .toolbar, button, select, input, textarea, .tag{display:none !important}
+      /* Hide Saisie form in print */
+      section.card.saisie-section{display:none !important}
+      /* Modern table look */
+      table{border:1px solid #cbd5e1}
+      th{background:#e2e8f0;color:#0f172a}
+      tfoot td{background:#e2e8f0}
+      h2{color:#0f172a;border-bottom:2px solid #94a3b8;padding-bottom:4px}
+      h3{color:#334155}
+      tbody tr:nth-child(even){background:#f1f5f9}
+      tbody tr:nth-child(odd){background:#ffffff}
+      /* When printing project recap: hide regular sections, show project recap */
+      body.print-project #entriesSection{display:none !important}
+      body.print-project #recapOuvSection{display:none !important}
+      body.print-project #recapPosteSection{display:none !important}
+      body.print-project #projectRecap{display:block !important}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Suivi des heures – Chantier “Oléron”</h1>
+  <span class="tag">LocalStorage</span>
+  <span class="pill">Semaine ISO</span>
+  <span class="pill">Pas: 30 min</span>
+  <span class="pill" id="totalAllPill">Total Heures Chantier: 0:00 · Supp: 0:00</span>
+  <h2 id="printWeekTitle" style="display:none;margin:0">Récap semaine</h2>
+  <div id="projectsTabs" class="toolbar" style="margin-left:auto"></div>
+</header>
+
+<main>
+  <section class="card saisie-section">
+    <h2 style="margin:0 0 8px">Saisie</h2>
+    <div class="grid cols-3">
+      <label>Date
+        <input type="date" id="date">
+      </label>
+      <label>Poste / Tâche
+        <div class="toolbar">
+          <select id="poste"></select>
+          <button class="secondary" id="addPosteBtn" title="Ajouter un poste">+ Poste</button>
+        </div>
+      </label>
+      <label>Ouvrier
+        <div class="toolbar">
+          <select id="ouvrier"></select>
+          <button class="secondary" id="addOuvrierBtn" title="Ajouter un ouvrier">+ Ouvrier</button>
+        </div>
+      </label>
+    </div>
+    <div class="grid cols-3" style="margin-top:12px">
+      <label>Heures normales
+        <select id="hNorm"></select>
+      </label>
+      <label>Heures supp
+        <select id="hSupp"></select>
+      </label>
+      <label>Commentaire
+        <input type="text" id="comment" placeholder="Optionnel">
+      </label>
+    </div>
+    <div class="toolbar" style="margin-top:12px">
+      <button id="addEntry">Ajouter l'entrée</button>
+      <button class="secondary" id="clearForm">Vider</button>
+      <span class="muted" id="weekPreview"></span>
+      <button class="secondary" id="clearDayFilter" title="Réinitialiser le filtre jour">Réinitialiser filtres</button>
+    </div>
+  </section>
+
+  <section class="card" id="entriesSection">
+    <div class="toolbar" style="justify-content:space-between;align-items:center">
+      <h2 style="margin:0">Entrées</h2>
+      <div class="toolbar">
+        <label style="min-width:200px">Filtrer par semaine
+          <select id="weekFilter"></select>
+        </label>
+        <div style="position:relative">
+          <button class="secondary" id="shareMenuBtn">Exporter / Importer ▼</button>
+          <div id="shareMenuPanel" style="display:none;position:absolute;right:0;top:38px;background:#0b1220;border:1px solid var(--line);border-radius:8px;padding:6px;min-width:220px;box-shadow:0 10px 20px rgba(0,0,0,.4)">
+            <button class="secondary" id="exportJson" style="width:100%;text-align:left">Exporter JSON</button>
+            <button class="secondary" id="exportCsv" style="width:100%;text-align:left">Exporter CSV</button>
+            <button class="secondary" id="importJson" style="width:100%;text-align:left">Importer JSON</button>
+            <button class="secondary" id="shareUrl" style="width:100%;text-align:left">Partager URL</button>
+          </div>
+        </div>
+        <button class="secondary" id="printWeek">Imprimer semaine</button>
+        <button class="secondary" id="printProjectRecap">Imprimer récap chantier</button>
+      </div>
+    </div>
+    <div style="overflow:auto;margin-top:10px">
+      <table id="entriesTable">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Semaine</th>
+            <th>Poste</th>
+            <th>Ouvrier</th>
+            <th class="right">Heures normales</th>
+            <th class="right">Heures supp</th>
+            <th>Commentaire</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" class="right">Totaux (filtre appliqué):</td>
+            <td class="right" id="totalNorm">0:00</td>
+            <td class="right" id="totalSupp">0:00</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- Project total recap (print-only when using print-project mode) -->
+  <section class="card" id="projectRecap" style="display:none">
+    <h2 style="margin:0 0 8px">Récap chantier <span id="projectRecapName"></span></h2>
+    <div class="grid cols-2" style="margin-top:8px">
+      <div class="card">
+        <h3 style="margin:0 0 8px">Synthèse</h3>
+        <div class="grid">
+          <div><span class="pill">Jours de présence</span> <strong id="recapDays">0</strong></div>
+          <div><span class="pill">Total Heures Chantier</span> <strong id="recapTotal">0:00</strong></div>
+        </div>
+      </div>
+      <div></div>
+    </div>
+    <div class="grid cols-2" style="margin-top:10px">
+      <div>
+        <h3 style="margin:0 0 8px">Par Ouvrier</h3>
+        <div style="overflow:auto">
+          <table id="projectRecapOuv">
+            <thead>
+              <tr>
+                <th>Ouvrier</th>
+                <th class="right">Heures normales</th>
+                <th class="right">Heures supp</th>
+                <th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <h3 style="margin:0 0 8px">Par Poste</h3>
+        <div style="overflow:auto">
+          <table id="projectRecapPoste">
+            <thead>
+              <tr>
+                <th>Poste</th>
+                <th class="right">Heures normales</th>
+                <th class="right">Heures supp</th>
+                <th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="recapOuvSection">
+    <h2 style="margin:0 0 8px">Récap par Ouvrier (semaine filtrée)</h2>
+    <div style="overflow:auto;margin-top:10px">
+      <table id="recapOuv">
+        <thead>
+          <tr>
+            <th>Ouvrier</th>
+            <th class="right">Heures normales</th>
+            <th class="right">Heures supp</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="recapPosteSection">
+    <h2 style="margin:0 0 8px">Récap par Poste (semaine filtrée)</h2>
+    <div style="overflow:auto;margin-top:10px">
+      <table id="recapPoste">
+        <thead>
+          <tr>
+            <th>Poste</th>
+            <th class="right">Heures normales</th>
+            <th class="right">Heures supp</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+  // --- Utils temps ---
+  function minutesToHHMM(min){ const h=Math.floor(min/60), m=min%60; return `${h}:${m.toString().padStart(2,'0')}`; }
+  function hhmmToMinutes(hhmm){ if(!hhmm) return 0; const [h,m]=hhmm.split(':').map(Number); return h*60+(m||0); }
+  function build30minOptions(maxHours=12){
+    const opts=[]; for(let i=0;i<=maxHours*2;i++){ opts.push(minutesToHHMM(i*30)); } return opts;
+  }
+  // ISO week/year for a given date
+  function toDate(val){ return new Date(val+'T00:00:00'); }
+  function isoWeekYear(d){
+    const date=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNum=(date.getUTCDay()+6)%7;
+    date.setUTCDate(date.getUTCDate()-dayNum+3);
+    const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));
+    const week=1+Math.round(((date-firstThursday)/86400000-3+((firstThursday.getUTCDay()+6)%7))/7);
+    return {week, year:date.getUTCFullYear()};
+  }
+
+  // --- Storage ---
+  const STORAGE_KEYS = {
+    entries:'oleron_entries_v1',
+    postes:'oleron_postes_v1',
+    ouvriers:'oleron_ouvriers_v1'
+  };
+  function load(key, fallback){ try{ return JSON.parse(localStorage.getItem(key)) ?? fallback }catch{ return fallback } }
+  function save(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
+
+  const PROJECTS_KEY = 'oleron_projects_v1';
+  const CURRENT_PROJECT_KEY = 'oleron_current_project_v1';
+  function slug(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+  let projects = load(PROJECTS_KEY, []);
+  let currentProject = load(CURRENT_PROJECT_KEY, '');
+  if(projects.length===0){ projects = ['Oléron']; save(PROJECTS_KEY, projects); }
+  if(!currentProject){ currentProject = projects[0]; save(CURRENT_PROJECT_KEY, currentProject); }
+  function k(name){ return `${STORAGE_KEYS[name]}__${slug(currentProject)}`; }
+  function loadP(name, fallback){ return load(k(name), fallback); }
+  function saveP(name, value){ save(k(name), value); }
+
+  // Migration des anciennes données (non suffixées) vers le chantier courant si vide
+  (function(){
+    const oldE = load(STORAGE_KEYS.entries, null);
+    const oldP = load(STORAGE_KEYS.postes, null);
+    const oldO = load(STORAGE_KEYS.ouvriers, null);
+    if(oldE && !Array.isArray(loadP('entries', []))?.length){ saveP('entries', oldE); }
+    if(oldP && !Array.isArray(loadP('postes', []))?.length){ saveP('postes', oldP); }
+    if(oldO && !Array.isArray(loadP('ouvriers', []))?.length){ saveP('ouvriers', oldO); }
+  })();
+
+  // --- State ---
+  let postes = loadP('postes', ["joints","enduits","pose de pierre","dépose","échafaudage","nettoyage","pose de moellons"]).map(capWords);
+  let ouvriers = loadP('ouvriers', ["Christophe","Jean-Claude"]);
+  let entries = loadP('entries', []); // {id, date, week, year, poste, ouvrier, normMin, suppMin, comment}
+
+  (function(){
+    if(location.hash && location.hash.startsWith('#share=')){
+      try{
+        const enc = location.hash.slice(7);
+        const json = decodeURIComponent(enc);
+        const payload = JSON.parse(json);
+        const name = String(payload.project||'').trim() || 'Import';
+        if(!projects.map(p=>p.toLowerCase()).includes(name.toLowerCase())){ projects.push(name); save(PROJECTS_KEY, projects); }
+        currentProject = name; save(CURRENT_PROJECT_KEY, currentProject);
+        const data = payload.data || {};
+        if(Array.isArray(data.postes)) saveP('postes', data.postes);
+        if(Array.isArray(data.ouvriers)) saveP('ouvriers', data.ouvriers);
+        if(Array.isArray(data.entries)) saveP('entries', data.entries);
+        postes = loadP('postes', postes).map(capWords);
+        ouvriers = loadP('ouvriers', ouvriers);
+        entries = loadP('entries', entries);
+        location.hash = '';
+      }catch(e){
+        alert('Lien de partage invalide');
+        location.hash = '';
+      }
+    }
+  })();
+
+  // --- DOM refs ---
+  const dateEl = document.getElementById('date');
+  const posteEl = document.getElementById('poste');
+  const ouvrierEl = document.getElementById('ouvrier');
+  const hNormEl = document.getElementById('hNorm');
+  const hSuppEl = document.getElementById('hSupp');
+  const commentEl = document.getElementById('comment');
+  const weekPreview = document.getElementById('weekPreview');
+
+  const entriesTableBody = document.querySelector('#entriesTable tbody');
+  const weekFilterEl = document.getElementById('weekFilter');
+  const totalNormEl = document.getElementById('totalNorm');
+  const totalSuppEl = document.getElementById('totalSupp');
+
+  const recapOuvBody = document.querySelector('#recapOuv tbody');
+  const recapPosteBody = document.querySelector('#recapPoste tbody');
+  // hidden file input for import
+  const importInput = document.createElement('input');
+  importInput.type = 'file';
+  importInput.accept = 'application/json,.json';
+  importInput.style.display = 'none';
+  document.body.appendChild(importInput);
+  let isPrinting = false;
+
+  function renderProjectsTabs(){
+    const wrap = document.getElementById('projectsTabs');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    projects.forEach(name=>{
+      const b=document.createElement('button');
+      b.textContent = name;
+      if(name!==currentProject){ b.classList.add('secondary'); }
+      b.addEventListener('click', ()=>{
+        if(currentProject===name) return;
+        currentProject = name; save(CURRENT_PROJECT_KEY, currentProject);
+        postes = loadP('postes', ["joints","enduits","pose de pierre","dépose","échafaudage","nettoyage","pose de moellons"]).map(capWords);
+        ouvriers = loadP('ouvriers', ["Christophe","Jean-Claude"]);
+        entries = loadP('entries', []);
+        renderOptions(posteEl, postes);
+        renderOptions(ouvrierEl, ouvriers);
+        const h1 = document.querySelector('header h1'); if(h1){ h1.textContent = `Suivi des heures – Chantier “${currentProject}”`; }
+        dayFilter = '';
+        populateWeekFilter();
+        render();
+        renderProjectsTabs();
+      });
+      wrap.appendChild(b);
+    });
+    const plus=document.createElement('button');
+    plus.className='secondary'; plus.textContent = '+ Chantier';
+    plus.addEventListener('click', ()=>{
+      const v = prompt('Nom du chantier:');
+      const name = v?.trim(); if(!name) return;
+      if(!projects.map(p=>p.toLowerCase()).includes(name.toLowerCase())){
+        projects.push(name); save(PROJECTS_KEY, projects);
+      }
+      currentProject = name; save(CURRENT_PROJECT_KEY, currentProject);
+      if(!Array.isArray(loadP('postes', null))){ saveP('postes', ["joints","enduits","pose de pierre","dépose","échafaudage","nettoyage","pose de moellons"]); }
+      if(!Array.isArray(loadP('ouvriers', null))){ saveP('ouvriers', ["Christophe","Jean-Claude"]); }
+      if(!Array.isArray(loadP('entries', null))){ saveP('entries', []); }
+      postes = loadP('postes', ["joints","enduits","pose de pierre","dépose","échafaudage","nettoyage","pose de moellons"]).map(capWords);
+      ouvriers = loadP('ouvriers', ["Christophe","Jean-Claude"]);
+      entries = loadP('entries', []);
+      renderOptions(posteEl, postes);
+      renderOptions(ouvrierEl, ouvriers);
+      const h1 = document.querySelector('header h1'); if(h1){ h1.textContent = `Suivi des heures – Chantier “${currentProject}”`; }
+      dayFilter = '';
+      populateWeekFilter();
+      render();
+      renderProjectsTabs();
+    });
+    wrap.appendChild(plus);
+    const rename=document.createElement('button');
+    rename.className='secondary'; rename.textContent='Renommer';
+    rename.addEventListener('click', ()=>{
+      const v = prompt('Nouveau nom du chantier:', currentProject);
+      const name = v?.trim();
+      if(!name || name===currentProject) return;
+      if(projects.map(p=>p.toLowerCase()).includes(name.toLowerCase())){ alert('Un chantier avec ce nom existe déjà'); return; }
+      const old = currentProject;
+      const oldSlug = slug(old);
+      const newSlug = slug(name);
+      ['entries','postes','ouvriers'].forEach(key=>{
+        const oldK = `${STORAGE_KEYS[key]}__${oldSlug}`;
+        const newK = `${STORAGE_KEYS[key]}__${newSlug}`;
+        const val = localStorage.getItem(oldK);
+        if(val!==null){ localStorage.setItem(newK, val); localStorage.removeItem(oldK); }
+      });
+      projects = projects.map(p=>p===old? name : p);
+      save(PROJECTS_KEY, projects);
+      currentProject = name; save(CURRENT_PROJECT_KEY, currentProject);
+      postes = loadP('postes', ["joints","enduits","pose de pierre","dépose","échafaudage","nettoyage","pose de moellons"]).map(capWords);
+      ouvriers = loadP('ouvriers', ["Christophe","Jean-Claude"]);
+      entries = loadP('entries', []);
+      renderOptions(posteEl, postes);
+      renderOptions(ouvrierEl, ouvriers);
+      const h1 = document.querySelector('header h1'); if(h1){ h1.textContent = `Suivi des heures – Chantier “${currentProject}”`; }
+      dayFilter = '';
+      populateWeekFilter();
+      render();
+      renderProjectsTabs();
+    });
+    wrap.appendChild(rename);
+    const del=document.createElement('button');
+    del.className='danger'; del.textContent='Supprimer';
+    del.addEventListener('click', ()=>{
+      if(!confirm(`Supprimer le chantier “${currentProject}” ?`)) return;
+      const name = currentProject;
+      const s = slug(name);
+      ['entries','postes','ouvriers'].forEach(key=>{
+        const k = `${STORAGE_KEYS[key]}__${s}`;
+        localStorage.removeItem(k);
+      });
+      projects = projects.filter(p=>p!==name);
+      if(projects.length===0){ projects = ['Oléron']; }
+      save(PROJECTS_KEY, projects);
+      currentProject = projects[0]; save(CURRENT_PROJECT_KEY, currentProject);
+      postes = loadP('postes', ["joints","enduits","pose de pierre","dépose","échafaudage","nettoyage","pose de moellons"]).map(capWords);
+      ouvriers = loadP('ouvriers', ["Christophe","Jean-Claude"]);
+      entries = loadP('entries', []);
+      renderOptions(posteEl, postes);
+      renderOptions(ouvrierEl, ouvriers);
+      const h1 = document.querySelector('header h1'); if(h1){ h1.textContent = `Suivi des heures – Chantier “${currentProject}”`; }
+      dayFilter = '';
+      populateWeekFilter();
+      render();
+      renderProjectsTabs();
+    });
+    wrap.appendChild(del);
+  }
+
+  // Populate project recap (all entries of current project)
+  function populateProjectRecap(){
+    const nameEl = document.getElementById('projectRecapName');
+    const tbodyO = document.querySelector('#projectRecapOuv tbody');
+    const tbodyP = document.querySelector('#projectRecapPoste tbody');
+    const daysEl = document.getElementById('recapDays');
+    const totalEl = document.getElementById('recapTotal');
+    if(!nameEl||!tbodyO||!tbodyP||!daysEl||!totalEl) return;
+    nameEl.textContent = `“${currentProject}”`;
+    tbodyO.innerHTML=''; tbodyP.innerHTML='';
+    const byO = {}; const byP = {}; const daySet = new Set();
+    let sumNorm=0, sumSupp=0;
+    entries.forEach(e=>{
+      daySet.add(e.date);
+      sumNorm += e.normMin; sumSupp += e.suppMin;
+      if(!byO[e.ouvrier]) byO[e.ouvrier] = {norm:0,supp:0};
+      byO[e.ouvrier].norm += e.normMin; byO[e.ouvrier].supp += e.suppMin;
+      const pKey = capWords(String(e.poste||'').trim());
+      if(!byP[pKey]) byP[pKey] = {norm:0,supp:0};
+      byP[pKey].norm += e.normMin; byP[pKey].supp += e.suppMin;
+    });
+    Object.entries(byO).sort(([a],[b])=>a.localeCompare(b)).forEach(([name,v])=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `
+        <td>${name}</td>
+        <td class="right">${minutesToHHMM(v.norm)}</td>
+        <td class="right">${minutesToHHMM(v.supp)}</td>
+        <td class="right">${minutesToHHMM(v.norm+v.supp)}</td>
+      `;
+      tbodyO.appendChild(tr);
+    });
+    if(!Object.keys(byO).length){ tbodyO.innerHTML = `<tr><td colspan="4" class="muted">Aucune donnée</td></tr>`; }
+    Object.entries(byP).sort(([a],[b])=>a.localeCompare(b)).forEach(([p,v])=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `
+        <td>${capWords(p)}</td>
+        <td class="right">${minutesToHHMM(v.norm)}</td>
+        <td class="right">${minutesToHHMM(v.supp)}</td>
+        <td class="right">${minutesToHHMM(v.norm+v.supp)}</td>
+      `;
+      tbodyP.appendChild(tr);
+    });
+    if(!Object.keys(byP).length){ tbodyP.innerHTML = `<tr><td colspan="4" class="muted">Aucune donnée</td></tr>`; }
+    daysEl.textContent = String(daySet.size);
+    totalEl.textContent = minutesToHHMM(sumNorm+sumSupp);
+  }
+
+  // Print project recap (attach once)
+  document.getElementById('printProjectRecap').addEventListener('click', ()=>{
+    if(isPrinting) return;
+    isPrinting = true;
+    const onAfter = ()=>{
+      document.body.classList.remove('print-project');
+      window.removeEventListener('afterprint', onAfter);
+      isPrinting = false;
+    };
+    document.body.classList.add('print-project');
+    populateProjectRecap();
+    render();
+    window.addEventListener('afterprint', onAfter);
+    window.print();
+  });
+
+  // --- Init selects ---
+  function capWords(s){
+    if(!s) return s;
+    return s.split(/([ \-\']+)/).map(part=>{
+      if(/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(part.charAt(0))){
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      }
+      return part;
+    }).join('');
+  }
+  function renderOptions(select, arr){
+    select.innerHTML = '';
+    arr.forEach(v=>{
+      const opt=document.createElement('option');
+      opt.value=v; opt.textContent=v;
+      select.appendChild(opt);
+    });
+  }
+  function ensureUniquePush(arr, value){
+    if(!value) return arr;
+    if(!arr.map(v=>v.toLowerCase().trim()).includes(value.toLowerCase().trim())) arr.push(value);
+    return arr;
+  }
+
+  function populateWeekFilter(){
+    const prev = weekFilterEl.value;
+    const uniq = new Map(); // key -> label
+    entries.forEach(e=>{
+      const key = `${e.year}-S${String(e.week).padStart(2,'0')}`;
+      uniq.set(key, key);
+    });
+    const all = Array.from(uniq.keys()).sort();
+    weekFilterEl.innerHTML = '';
+    all.forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; weekFilterEl.appendChild(o); });
+    if(all.length){
+      if(all.includes(prev)){
+        weekFilterEl.value = prev;
+      }else{
+        weekFilterEl.value = all[0];
+      }
+    }else{
+      weekFilterEl.value = '';
+    }
+  }
+
+  function setToday(){
+    const t = new Date(); dateEl.value = t.toISOString().slice(0,10);
+    updateWeekPreview();
+  }
+
+  function updateWeekPreview(){
+    if(!dateEl.value){ weekPreview.textContent=''; return; }
+    const {week, year} = isoWeekYear(toDate(dateEl.value));
+    weekPreview.textContent = `Semaine ISO ${week} – ${year}`;
+  }
+
+  // 30 min options
+  const slots = build30minOptions(12);
+  renderOptions(hNormEl, slots); renderOptions(hSuppEl, slots);
+  // Lists
+  renderOptions(posteEl, postes);
+  renderOptions(ouvrierEl, ouvriers);
+  setToday();
+
+  // Day filter state (YYYY-MM-DD). When set, overrides week filter
+  let dayFilter = '';
+
+  // --- Event handlers ---
+  dateEl.addEventListener('change', updateWeekPreview);
+
+  document.getElementById('addPosteBtn').addEventListener('click', ()=>{
+    const v = prompt('Ajouter un poste:');
+    if(!v) return;
+    const cap = capWords(v.trim());
+    ensureUniquePush(postes, cap);
+    saveP('postes', postes);
+    renderOptions(posteEl, postes);
+    posteEl.value = cap;
+  });
+
+  document.getElementById('addOuvrierBtn').addEventListener('click', ()=>{
+    const v = prompt('Ajouter un ouvrier:');
+    if(!v) return;
+    ensureUniquePush(ouvriers, v.trim());
+    saveP('ouvriers', ouvriers);
+    renderOptions(ouvrierEl, ouvriers);
+    ouvrierEl.value = v.trim();
+  });
+
+  document.getElementById('clearForm').addEventListener('click', ()=>{
+    commentEl.value='';
+    hNormEl.value='0:00';
+    hSuppEl.value='0:00';
+  });
+
+  // When changing date, filter entries to that specific day
+  dateEl.addEventListener('change', ()=>{
+    updateWeekPreview();
+    dayFilter = dateEl.value || '';
+    render();
+  });
+
+  document.getElementById('clearDayFilter').addEventListener('click', ()=>{
+    dayFilter = '';
+    weekFilterEl.value = weekFilterEl.options?.[0]?.value || '';
+    render();
+  });
+
+  document.getElementById('addEntry').addEventListener('click', ()=>{
+    if(!dateEl.value){ alert('Sélectionne une date'); return; }
+    const d = toDate(dateEl.value);
+    const {week, year} = isoWeekYear(d);
+    const entry = {
+      id: crypto.randomUUID(),
+      date: dateEl.value,
+      week, year,
+      poste: capWords(posteEl.value),
+      ouvrier: ouvrierEl.value,
+      normMin: hhmmToMinutes(hNormEl.value),
+      suppMin: hhmmToMinutes(hSuppEl.value),
+      comment: commentEl.value?.trim() || ''
+    };
+    entries.push(entry);
+    saveP('entries', entries);
+    populateWeekFilter();
+    if (weekFilterEl.value) { dayFilter = ''; }
+    render();
+  });
+
+  document.getElementById('exportJson').addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify({entries,postes,ouvriers},null,2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'oleron_heures.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // Export CSV (toutes les entrées)
+  document.getElementById('exportCsv').addEventListener('click', ()=>{
+    const sep = ';';
+    const headers = ['date','semaine_iso','annee','poste','ouvrier','heures_normales','heures_supp','commentaire'];
+    const safe = (val)=>{
+      const s = String(val ?? '');
+      if (s.includes(sep) || s.includes('"') || s.includes('\n')) {
+        return '"' + s.replaceAll('"','""') + '"';
+      }
+      return s;
+    };
+    const rows = [headers.join(sep)];
+    entries.forEach(e=>{
+      const semaine = 'S' + String(e.week).padStart(2,'0');
+      const row = [
+        e.date,
+        semaine,
+        e.year,
+        e.poste,
+        e.ouvrier,
+        minutesToHHMM(e.normMin),
+        minutesToHHMM(e.suppMin),
+        e.comment || ''
+      ].map(safe);
+      rows.push(row.join(sep));
+    });
+    const blob = new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'oleron_heures.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  const shareMenuBtn = document.getElementById('shareMenuBtn');
+  const shareMenuPanel = document.getElementById('shareMenuPanel');
+  if(shareMenuBtn && shareMenuPanel){
+    shareMenuBtn.addEventListener('click', (e)=>{ e.stopPropagation(); shareMenuPanel.style.display = (shareMenuPanel.style.display==='block' ? 'none' : 'block'); });
+    document.addEventListener('click', ()=>{ shareMenuPanel.style.display='none'; });
+    shareMenuPanel.addEventListener('click', ()=>{ shareMenuPanel.style.display='none'; });
+  }
+
+  document.getElementById('shareUrl').addEventListener('click', async ()=>{
+    const payload = { project: currentProject, data: { entries, postes, ouvriers } };
+    const enc = encodeURIComponent(JSON.stringify(payload));
+    const url = `${location.origin}${location.pathname}#share=${enc}`;
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(url); alert('Lien copié dans le presse-papiers'); }
+      else{ prompt('Copie ce lien:', url); }
+    }catch{
+      prompt('Copie ce lien:', url);
+    }
+  });
+
+  // Import JSON
+  document.getElementById('importJson').addEventListener('click', ()=> importInput.click());
+  importInput.addEventListener('change', (e)=>{
+    const file = e.target.files?.[0];
+    if(!file) return;
+    const fr = new FileReader();
+    fr.onload = ()=>{
+      try{
+        const data = JSON.parse(String(fr.result||'{}'));
+        if(!Array.isArray(data.entries)) throw new Error('JSON invalide: entries manquant');
+        // optional lists
+        if(Array.isArray(data.postes)) postes = data.postes.map(capWords); 
+        if(Array.isArray(data.ouvriers)) ouvriers = data.ouvriers;
+
+        // sanitize entries
+        entries = data.entries.map((e)=>({
+          id: e.id || crypto.randomUUID(),
+          date: e.date,
+          week: Number(e.week) || isoWeekYear(toDate(e.date)).week,
+          year: Number(e.year) || isoWeekYear(toDate(e.date)).year,
+          poste: capWords(e.poste),
+          ouvrier: e.ouvrier,
+          normMin: typeof e.normMin === 'number' ? e.normMin : hhmmToMinutes(e.heures_normales || e.norm || '0:00'),
+          suppMin: typeof e.suppMin === 'number' ? e.suppMin : hhmmToMinutes(e.heures_supp || e.supp || '0:00'),
+          comment: e.comment ?? e.commentaire ?? ''
+        })).filter(x=>!!x.date);
+
+        // persist
+        saveP('entries', entries);
+        saveP('postes', postes);
+        saveP('ouvriers', ouvriers);
+
+        // refresh UI
+        renderOptions(posteEl, postes);
+        renderOptions(ouvrierEl, ouvriers);
+        populateWeekFilter();
+        render();
+        // reset input
+        importInput.value = '';
+        alert('Import JSON terminé');
+      }catch(err){
+        alert('Erreur d\'import: ' + err.message);
+      }
+    };
+    fr.readAsText(file);
+  });
+
+  weekFilterEl.addEventListener('change', ()=>{
+    // When a week is selected, ensure day filter is cleared so week filter applies
+    dayFilter = '';
+    render();
+  });
+
+  // Print handlers
+  function printWithState(applyFiltersFn){
+    if(isPrinting) return;
+    isPrinting = true;
+    const prevDay = dayFilter;
+    const prevWeek = weekFilterEl.value;
+    applyFiltersFn();
+    render();
+    const restore = ()=>{
+      dayFilter = prevDay;
+      weekFilterEl.value = prevWeek;
+      render();
+      const t = document.getElementById('printWeekTitle');
+      if(t){ t.style.display = 'none'; t.textContent = 'Récap semaine'; }
+      window.removeEventListener('afterprint', restore);
+      isPrinting = false;
+    };
+    window.addEventListener('afterprint', restore);
+    window.print();
+  }
+  document.getElementById('printWeek').addEventListener('click', ()=>{
+    printWithState(()=>{
+      dayFilter = '';
+      if(!weekFilterEl.value){
+        const {week, year} = isoWeekYear(new Date());
+        const key = `${year}-S${String(week).padStart(2,'0')}`;
+        weekFilterEl.value = key;
+      }
+      const sel = weekFilterEl.value;
+      const t = document.getElementById('printWeekTitle');
+      if(t){
+        const [y, s] = sel.split('-S');
+        const w = Number(s || '0');
+        t.textContent = `Semaine ${w} – ${y}`;
+        t.style.display = 'block';
+      }
+    });
+  });
+
+  // --- Rendering ---
+  function render(){
+    // Filter by week
+    const filterKey = weekFilterEl.value;
+    const filtered = entries.filter(e=>{
+      if(dayFilter){
+        return e.date === dayFilter; // day filter overrides week filter
+      }
+      if(!filterKey) return true;
+      const k = `${e.year}-S${String(e.week).padStart(2,'0')}`;
+      return k === filterKey;
+    });
+
+    // Entries table
+    entriesTableBody.innerHTML = '';
+    let sumNorm=0, sumSupp=0;
+    // Build worker shading map
+    const workerOrder = Array.from(new Set(filtered.map(e=>e.ouvrier))).sort();
+    const workerIndex = Object.fromEntries(workerOrder.map((w,i)=>[w,i]));
+
+    filtered.forEach(e=>{
+      sumNorm += e.normMin; sumSupp += e.suppMin;
+      const tr = document.createElement('tr');
+      tr.className = (workerIndex[e.ouvrier] % 2 === 0) ? 'worker-even' : 'worker-odd';
+      tr.innerHTML = `
+        <td>${e.date}</td>
+        <td>${String(e.week).padStart(2,'0')}/${e.year}</td>
+        <td>${capWords(e.poste)}</td>
+        <td>${e.ouvrier}</td>
+        <td class="right">${minutesToHHMM(e.normMin)}</td>
+        <td class="right">${minutesToHHMM(e.suppMin)}</td>
+        <td>${e.comment || ''}</td>
+        <td class="right"><button class="danger" data-id="${e.id}">Supprimer</button></td>
+      `;
+      entriesTableBody.appendChild(tr);
+    });
+    totalNormEl.textContent = minutesToHHMM(sumNorm);
+    totalSuppEl.textContent = minutesToHHMM(sumSupp);
+
+    // Delete handlers
+    entriesTableBody.querySelectorAll('button[data-id]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        entries = entries.filter(x=>x.id!==id);
+        saveP('entries', entries);
+        populateWeekFilter();
+        render();
+      });
+    });
+
+    // Recap by worker
+    const byOuv = {};
+    filtered.forEach(e=>{
+      if(!byOuv[e.ouvrier]) byOuv[e.ouvrier]={norm:0,supp:0};
+      byOuv[e.ouvrier].norm += e.normMin;
+      byOuv[e.ouvrier].supp += e.suppMin;
+    });
+    recapOuvBody.innerHTML = '';
+    Object.entries(byOuv).sort().forEach(([name, v])=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `
+        <td>${name}</td>
+        <td class="right">${minutesToHHMM(v.norm)}</td>
+        <td class="right">${minutesToHHMM(v.supp)}</td>
+      `;
+      recapOuvBody.appendChild(tr);
+    });
+    if(Object.keys(byOuv).length===0){ recapOuvBody.innerHTML = `<tr><td colspan="3" class="muted">Aucune donnée pour le filtre</td></tr>`; }
+
+    // Recap by poste
+    const byPoste = {};
+    filtered.forEach(e=>{
+      if(!byPoste[e.poste]) byPoste[e.poste]={norm:0,supp:0};
+      byPoste[e.poste].norm += e.normMin;
+      byPoste[e.poste].supp += e.suppMin;
+    });
+    recapPosteBody.innerHTML = '';
+    Object.entries(byPoste).sort().forEach(([p, v])=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `
+        <td>${capWords(p)}</td>
+        <td class="right">${minutesToHHMM(v.norm)}</td>
+        <td class="right">${minutesToHHMM(v.supp)}</td>
+      `;
+      recapPosteBody.appendChild(tr);
+    });
+    if(Object.keys(byPoste).length===0){ recapPosteBody.innerHTML = `<tr><td colspan="3" class="muted">Aucune donnée pour le filtre</td></tr>`; }
+
+    // Update global total pill (all entries, not just filtered)
+    const totalAll = entries.reduce((acc,e)=>{
+      acc.norm += e.normMin; acc.supp += e.suppMin; return acc;
+    }, {norm:0,supp:0});
+    const pill = document.getElementById('totalAllPill');
+    if(pill){ pill.textContent = `Total Heures Chantier: ${minutesToHHMM(totalAll.norm + totalAll.supp)} · Supp: ${minutesToHHMM(totalAll.supp)}`; }
+  }
+
+  // First load
+  populateWeekFilter();
+  renderProjectsTabs();
+  (function(){ const h1 = document.querySelector('header h1'); if(h1){ h1.textContent = `Suivi des heures – Chantier “${currentProject}”`; } })();
+  render();
+</script>
+</body>
+</html>
